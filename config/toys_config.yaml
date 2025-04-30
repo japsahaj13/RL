@@ -21,10 +21,12 @@ demand_noise_scale: 0.05
 holding_cost: !!python/object/apply:numpy._core.multiarray.scalar
 - *id001
 - !!binary |
-  GYNdO56c8D8=
+  yOy2TRC/xT8=
 holding_rate_k: 10.0
 holding_rate_x0: 0.25
 initial_inventory: 200
+linear_base_rate: 0.05
+linear_excess_penalty: 0.05
 periods_per_year: 12
 price_elasticity: !!python/object/apply:numpy._core.multiarray.scalar
 - *id001
@@ -58,12 +60,13 @@ season_effects:
   Spring: 1.0
   Summer: 0.9998041557813937
   Winter: 0.9994125824015434
-spoilage_pct: 0.02
+spoilage_pct: 0.002
 stockout_penalty: 5.0
-storage_fee: 2.0
+storage_fee: 0.15
 unit_cost: 25
 use_dynamic_holding_cost: true
 use_fitted_model: true
+use_linear_holding_cost: false
 weather_effects:
   Cloudy: 0.9932846570761019
   Rainy: 0.9866144099827894

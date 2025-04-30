@@ -265,10 +265,10 @@ def main():
         
         # Example business parameters
         unit_cost = 50.0
-        storage_fee = 2.0
+        storage_fee = 0.15  # FIXED: Reduced from 2.0 to realistic value
         annual_finance_rate = 0.12
         periods_per_year = 12
-        spoilage_pct = 0.02
+        spoilage_pct = 0.002  # FIXED: Reduced from 0.02 to realistic value
         
         # Set x0 as a business threshold (not equal to avg_eir)
         x0 = 0.25  # Midpoint where rate = L/2

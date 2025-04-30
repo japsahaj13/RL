@@ -60,12 +60,15 @@ class MSMEConfig:
             use_fitted_model: bool = True,    # Always use fitted model by default
             # Parameters for dynamic holding cost
             use_dynamic_holding_cost: bool = True,
-            storage_fee: float = 2.0,
+            storage_fee: float = 0.15,       # FIXED: Reduced from 2.0 to realistic value
             annual_finance_rate: float = 0.12,
             periods_per_year: int = 12,
-            spoilage_pct: float = 0.02,
+            spoilage_pct: float = 0.002,      # FIXED: Reduced from 0.02 to realistic value
             holding_rate_x0: float = 0.25,
             holding_rate_k: float = 10.0,
+            use_linear_holding_cost: bool = False,  # NEW: Option to use linear model instead of logistic
+            linear_base_rate: float = 0.05,   # NEW: Base rate for linear model
+            linear_excess_penalty: float = 0.05,  # NEW: Additional rate for excess inventory
             config_path: Optional[str] = None
     ):
         """
@@ -99,6 +102,9 @@ class MSMEConfig:
             spoilage_pct: Spoilage percentage per period
             holding_rate_x0: Midpoint for holding rate logistic function
             holding_rate_k: Steepness of the holding rate curve
+            use_linear_holding_cost: Whether to use linear holding cost model instead of logistic
+            linear_base_rate: Base rate for linear holding cost model
+            linear_excess_penalty: Additional rate for excess inventory in linear model
             config_path: Path to YAML configuration file to load
         """
         # If config path is provided, load from file
@@ -186,6 +192,11 @@ class MSMEConfig:
         self.spoilage_pct = spoilage_pct
         self.holding_rate_x0 = holding_rate_x0
         self.holding_rate_k = holding_rate_k
+        
+        # Linear holding cost parameters
+        self.use_linear_holding_cost = use_linear_holding_cost
+        self.linear_base_rate = linear_base_rate
+        self.linear_excess_penalty = linear_excess_penalty
         
         # Always load fitted model parameters (regardless of use_fitted_model)
         # This ensures all demand parameters are properly set from data
@@ -371,8 +382,20 @@ class MSMEConfig:
         Returns:
             Calculated holding cost rate
         """
-        # Always try to use dynamic calculation first
-        if compute_dynamic_holding_cost is not None:
+        if inventory <= 0:
+            return 0.0
+        
+        # Calculate Excess Inventory Rate (EIR)
+        eir = max(0, (inventory - demand_forecast) / inventory)
+        
+        # If linear model is selected, use a simple linear function
+        if hasattr(self, 'use_linear_holding_cost') and self.use_linear_holding_cost:
+            base_rate = self.linear_base_rate if hasattr(self, 'linear_base_rate') else 0.05
+            excess_penalty = self.linear_excess_penalty if hasattr(self, 'linear_excess_penalty') else 0.05
+            return base_rate + eir * excess_penalty
+        
+        # Otherwise, use the original dynamic or static holding cost calculation
+        if compute_dynamic_holding_cost is not None and self.use_dynamic_holding_cost:
             try:
                 return compute_dynamic_holding_cost(
                     inventory=inventory,
