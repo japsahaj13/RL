@@ -1,6 +1,5 @@
 annual_finance_rate: 0.12
 base_demand: 80.00660530032626
-competitor_effect: 0.5
 competitor_sensitivity: !!python/object/apply:numpy._core.multiarray.scalar
 - &id001 !!python/object/apply:numpy.dtype
   args:
@@ -31,7 +30,6 @@ price_elasticity: !!python/object/apply:numpy._core.multiarray.scalar
 - *id001
 - !!binary |
   W3WuLDy7Eb8=
-price_sensitivity: 1.0
 price_tiers:
 - 5.0
 - 7.0
@@ -45,7 +43,6 @@ price_tiers:
 - 13.0
 product_category: Groceries
 product_name: Grocery Item
-promo_boost: 25
 promotion_multiplier: 1.0031554705370105
 region: North
 region_effects:
@@ -61,7 +58,6 @@ season_effects:
   Spring: 1.0
   Summer: 1.0178589976854178
   Winter: 1.0545395204677923
-seasonal_amplitude: 15
 spoilage_pct: 0.02
 stockout_penalty: 5.0
 storage_fee: 2.0

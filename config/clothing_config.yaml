@@ -1,6 +1,5 @@
 annual_finance_rate: 0.12
 base_demand: 91.23879706105767
-competitor_effect: 0.5
 competitor_sensitivity: !!python/object/apply:numpy._core.multiarray.scalar
 - &id001 !!python/object/apply:numpy.dtype
   args:
@@ -31,7 +30,6 @@ price_elasticity: !!python/object/apply:numpy._core.multiarray.scalar
 - *id001
 - !!binary |
   5ZYG6zsar78=
-price_sensitivity: 1.0
 price_tiers:
 - 20.0
 - 28.0
@@ -45,7 +43,6 @@ price_tiers:
 - 52.0
 product_category: Clothing
 product_name: Clothing Item
-promo_boost: 25
 promotion_multiplier: 1.0177904924403192
 region: South
 region_effects:
@@ -61,7 +58,6 @@ season_effects:
   Spring: 1.0
   Summer: 1.007393217786793
   Winter: 1.0223440364789467
-seasonal_amplitude: 15
 spoilage_pct: 0.02
 stockout_penalty: 5.0
 storage_fee: 2.0
