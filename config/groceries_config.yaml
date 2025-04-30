@@ -18,31 +18,28 @@ competitor_sensitivity: !!python/object/apply:numpy._core.multiarray.scalar
 - !!binary |
   Az16qND/kD8=
 demand_noise_scale: 0.05
-holding_cost: !!python/object/apply:numpy._core.multiarray.scalar
-- *id001
-- !!binary |
-  ioLb9nkYuj8=
+holding_cost: 0.05
 holding_rate_k: 10.0
 holding_rate_x0: 0.25
 initial_inventory: 400
-linear_base_rate: 0.05
-linear_excess_penalty: 0.05
+linear_base_rate: 0.02
+linear_excess_penalty: 0.03
 periods_per_year: 12
 price_elasticity: !!python/object/apply:numpy._core.multiarray.scalar
 - *id001
 - !!binary |
   W3WuLDy7Eb8=
 price_tiers:
-- 5.0
 - 7.0
 - 8.0
 - 9.0
-- 9.5
 - 10.0
-- 10.5
 - 11.0
 - 12.0
 - 13.0
+- 14.0
+- 15.0
+- 16.0
 product_category: Groceries
 product_name: Grocery Item
 promotion_multiplier: 1.0031554705370105
@@ -60,13 +57,13 @@ season_effects:
   Spring: 1.0
   Summer: 1.0178589976854178
   Winter: 1.0545395204677923
-spoilage_pct: 0.002
-stockout_penalty: 5.0
-storage_fee: 0.15
+spoilage_pct: 0.001
+stockout_penalty: 1.0
+storage_fee: 0.1
 unit_cost: 10
-use_dynamic_holding_cost: true
+use_dynamic_holding_cost: false
 use_fitted_model: true
-use_linear_holding_cost: false
+use_linear_holding_cost: true
 weather_effects:
   Cloudy: 0.995532137715356
   Rainy: 0.9910842372241064

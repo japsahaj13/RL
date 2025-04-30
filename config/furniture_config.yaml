@@ -18,31 +18,28 @@ competitor_sensitivity: !!python/object/apply:numpy._core.multiarray.scalar
 - !!binary |
   GPKKWfk4qb8=
 demand_noise_scale: 0.05
-holding_cost: !!python/object/apply:numpy._core.multiarray.scalar
-- *id001
-- !!binary |
-  2dUwVPyO5z8=
+holding_cost: 0.05
 holding_rate_k: 10.0
 holding_rate_x0: 0.25
 initial_inventory: 100
-linear_base_rate: 0.05
-linear_excess_penalty: 0.05
+linear_base_rate: 0.02
+linear_excess_penalty: 0.03
 periods_per_year: 12
 price_elasticity: !!python/object/apply:numpy._core.multiarray.scalar
 - *id001
 - !!binary |
   PV5VVgteqT8=
 price_tiers:
-- 75.0
 - 105.0
 - 120.0
 - 135.0
-- 142.5
 - 150.0
-- 157.5
 - 165.0
 - 180.0
 - 195.0
+- 210.0
+- 225.0
+- 240.0
 product_category: Furniture
 product_name: Furniture Item
 promotion_multiplier: 0.998091474948791
@@ -60,13 +57,13 @@ season_effects:
   Spring: 1.0
   Summer: 1.0067029085487416
   Winter: 1.0202438137501277
-spoilage_pct: 0.002
-stockout_penalty: 5.0
-storage_fee: 0.15
+spoilage_pct: 0.001
+stockout_penalty: 1.0
+storage_fee: 0.1
 unit_cost: 150
-use_dynamic_holding_cost: true
+use_dynamic_holding_cost: false
 use_fitted_model: true
-use_linear_holding_cost: false
+use_linear_holding_cost: true
 weather_effects:
   Cloudy: 0.99735053970504
   Rainy: 0.9947080990499346

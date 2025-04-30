@@ -18,31 +18,28 @@ competitor_sensitivity: !!python/object/apply:numpy._core.multiarray.scalar
 - !!binary |
   1sAkYlPeuL8=
 demand_noise_scale: 0.05
-holding_cost: !!python/object/apply:numpy._core.multiarray.scalar
-- *id001
-- !!binary |
-  yOy2TRC/xT8=
+holding_cost: 0.05
 holding_rate_k: 10.0
 holding_rate_x0: 0.25
 initial_inventory: 200
-linear_base_rate: 0.05
-linear_excess_penalty: 0.05
+linear_base_rate: 0.02
+linear_excess_penalty: 0.03
 periods_per_year: 12
 price_elasticity: !!python/object/apply:numpy._core.multiarray.scalar
 - *id001
 - !!binary |
   Id77b8yhuT8=
 price_tiers:
-- 12.5
 - 17.5
 - 20.0
 - 22.5
-- 23.75
 - 25.0
-- 26.25
 - 27.500000000000004
 - 30.0
 - 32.5
+- 35.0
+- 37.5
+- 40.0
 product_category: Toys
 product_name: Toy Item
 promotion_multiplier: 0.9790215417048954
@@ -60,13 +57,13 @@ season_effects:
   Spring: 1.0
   Summer: 0.9998041557813937
   Winter: 0.9994125824015434
-spoilage_pct: 0.002
-stockout_penalty: 5.0
-storage_fee: 0.15
+spoilage_pct: 0.001
+stockout_penalty: 1.0
+storage_fee: 0.1
 unit_cost: 25
-use_dynamic_holding_cost: true
+use_dynamic_holding_cost: false
 use_fitted_model: true
-use_linear_holding_cost: false
+use_linear_holding_cost: true
 weather_effects:
   Cloudy: 0.9932846570761019
   Rainy: 0.9866144099827894

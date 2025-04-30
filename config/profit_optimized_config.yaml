@@ -18,10 +18,13 @@ competitor_sensitivity: !!python/object/apply:numpy._core.multiarray.scalar
 - !!binary |
   1HcVE5Guuz8=
 demand_noise_scale: 0.05
-holding_cost: 0.05
+holding_cost: !!python/object/apply:numpy._core.multiarray.scalar
+- *id001
+- !!binary |
+  pxrDQDgf0j8=
 holding_rate_k: 10.0
 holding_rate_x0: 0.25
-initial_inventory: 80
+initial_inventory: 100
 linear_base_rate: 0.02
 linear_excess_penalty: 0.03
 periods_per_year: 12
@@ -30,16 +33,16 @@ price_elasticity: !!python/object/apply:numpy._core.multiarray.scalar
 - !!binary |
   C+8niBIBvr8=
 price_tiers:
-- 28.0
-- 32.0
-- 36.0
+- 25.0
+- 35.0
 - 40.0
-- 44.0
-- 48.0
-- 52.0
-- 56.0
+- 45.0
+- 47.5
+- 50.0
+- 52.5
+- 55.00000000000001
 - 60.0
-- 64.0
+- 65.0
 product_category: Electronics
 product_name: Sample Product
 promotion_multiplier: 1.0232301442903777
@@ -49,19 +52,19 @@ region_effects:
   North: 1.0
   South: 0.9887678516953857
   West: 0.9776618645463082
-restock_amount: 100
-restock_level: 30
-restock_period: 6
+restock_amount: 150
+restock_level: 50
+restock_period: 5
 season_effects:
   Autumn: 1.011028190210742
   Spring: 1.0
   Summer: 1.005498975738286
   Winter: 1.016587809699434
 spoilage_pct: 0.001
-stockout_penalty: 1.0
+stockout_penalty: 2.0
 storage_fee: 0.1
-unit_cost: 40
-use_dynamic_holding_cost: false
+unit_cost: 50
+use_dynamic_holding_cost: true
 use_fitted_model: true
 use_linear_holding_cost: true
 weather_effects:

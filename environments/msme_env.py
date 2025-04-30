@@ -17,6 +17,13 @@ from typing import Dict, List, Tuple, Optional, Any, Union
 
 from environments.config import MSMEConfig
 
+# Try to import competitor price modeling
+try:
+    from demand_modeling.competitor_price_modeling import predict_competitor_price
+except ImportError:
+    print("Warning: competitor_price_modeling module not found. Using simulated competitor behavior.")
+    predict_competitor_price = None
+
 class MSMEEnvironment(gym.Env):
     """
     Micro, Small & Medium Enterprise (MSME) pricing environment.
@@ -27,7 +34,8 @@ class MSMEEnvironment(gym.Env):
     
     def __init__(
             self, config: MSMEConfig, time_horizon: int = 30, 
-            alpha: float = 0.2, beta: float = 0.5, gamma: float = 0.2, delta: float = 0.2
+            alpha: float = 0.2, beta: float = 0.5, gamma: float = 0.2, delta: float = 0.2,
+            use_data_driven_competitor: bool = True
     ):
         """
         Initialize the MSME pricing environment.
@@ -39,6 +47,7 @@ class MSMEEnvironment(gym.Env):
             beta: Weight for market share in reward function
             gamma: Weight for inventory management in reward function
             delta: Weight for profit margin in reward function
+            use_data_driven_competitor: Whether to use data-driven competitor pricing model
         """
         self.config = config
         self.time_horizon = time_horizon
@@ -48,6 +57,16 @@ class MSMEEnvironment(gym.Env):
         self.beta = beta    # Market share
         self.gamma = gamma  # Inventory management
         self.delta = delta  # Profit margin
+        
+        # Whether to use data-driven competitor pricing
+        self.use_data_driven_competitor = use_data_driven_competitor and predict_competitor_price is not None
+        
+        if self.use_data_driven_competitor:
+            print(f"Using data-driven competitor pricing model for {config.product_category}")
+        else:
+            if use_data_driven_competitor and predict_competitor_price is None:
+                print("Data-driven competitor model not available. Using simulated competitor behavior.")
+            print(f"Using simulated competitor behavior for {config.product_category}")
         
         # Define action space (discrete price tiers)
         self.action_space = spaces.Discrete(len(config.price_tiers))
@@ -126,6 +145,18 @@ class MSMEEnvironment(gym.Env):
         self.inventory_history = []
         self.comp_price_history = []
         self.profit_history = []
+        
+        # Reset restock scheduling
+        if hasattr(self.config, 'get_restock_parameters'):
+            # Get initial parameters
+            initial_params = self.config.get_restock_parameters(
+                current_time=0,
+                demand_forecast=self.config.base_demand,
+                price=self.price,
+                units_sold=0
+            )
+            # Schedule first check
+            self.next_restock_check_time = initial_params['restock_period']
         
         # Randomly initialize season and weather
         self.current_season = random.choice(self.seasons)
@@ -244,6 +275,43 @@ class MSMEEnvironment(gym.Env):
         Returns:
             Competitor's price
         """
+        # Try to use the data-driven competitor model if enabled
+        if self.use_data_driven_competitor:
+            try:
+                # Get current state variables
+                discount = 0  # Default discount (could calculate from price_tiers)
+                is_promotion = self._is_promotion_period()
+                
+                # Get competitor price prediction from the model
+                competitor_price = predict_competitor_price(
+                    our_price=our_price,
+                    discount=discount,
+                    is_promotion=is_promotion,
+                    weather=self.current_weather,
+                    season=self.current_season,
+                    region=self.config.region,
+                    category=self.config.product_category
+                )
+                
+                # Define valid price range for competitor
+                min_price = self.config.unit_cost * 0.7
+                max_price = self.config.unit_cost * 2.2
+                
+                # Ensure price is within valid range
+                competitor_price = max(min_price, min(max_price, competitor_price))
+                
+                # Add small random noise for variation (1% max fluctuation)
+                noise_factor = 1.0 + 0.01 * (2 * random.random() - 1)
+                competitor_price *= noise_factor
+                
+                return competitor_price
+                
+            except Exception as e:
+                print(f"Warning: Error using data-driven competitor pricing model: {e}")
+                print("Falling back to simulated competitor behavior.")
+                # Fall back to the simulation approach below
+        
+        # Simulation-based competitor behavior (original implementation)
         # Define valid price range for competitor
         min_price = self.config.unit_cost * 0.8
         max_price = self.config.unit_cost * 2.0
@@ -278,25 +346,55 @@ class MSMEEnvironment(gym.Env):
     
     def _restock_inventory(self) -> Tuple[float, bool]:
         """
-        Handle inventory restocking logic.
+        Handle inventory restocking logic with dynamic scheduling.
         
         Returns:
             Tuple of (restocking cost, whether restock occurred)
         """
-        # Check if it's time to check inventory
-        if self.time_step % self.config.restock_period == 0:
+        # Store current inventory for prediction
+        self.config._current_inventory = self.inventory
+        
+        # Get forecast and recent sales
+        forecast_demand = self._get_demand_forecast()
+        units_sold = self.last_sales if self.sales_history else 0
+        
+        # Initialize next_check_time if not set
+        if not hasattr(self, 'next_restock_check_time'):
+            # Get initial parameters
+            params = self.config.get_restock_parameters(
+                current_time=self.time_step,
+                demand_forecast=forecast_demand,
+                price=self.price,
+                units_sold=units_sold
+            )
+            # Schedule first check
+            self.next_restock_check_time = params['restock_period']
+        
+        # Check if it's time to review inventory
+        if self.time_step >= self.next_restock_check_time:
+            # Get current parameters
+            params = self.config.get_restock_parameters(
+                current_time=self.time_step,
+                demand_forecast=forecast_demand,
+                price=self.price,
+                units_sold=units_sold
+            )
+            
             # Check if inventory is below restock level
-            if self.inventory < self.config.restock_level:
-                # Calculate how many units to order
-                restock_quantity = self.config.restock_amount
-                
+            if self.inventory < params['restock_level']:
                 # Add to inventory
-                self.inventory += restock_quantity
+                self.inventory += params['restock_amount']
                 
                 # Calculate cost
-                restock_cost = restock_quantity * self.config.unit_cost
+                restock_cost = params['restock_amount'] * self.config.unit_cost
+                
+                # Schedule next check
+                self.next_restock_check_time = self.time_step + params['restock_period']
                 
                 return restock_cost, True
+            else:
+                # Still schedule next check even if no restock needed
+                self.next_restock_check_time = self.time_step + params['restock_period']
         
         # No restocking
         return 0.0, False

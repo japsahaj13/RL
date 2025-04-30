@@ -18,31 +18,28 @@ competitor_sensitivity: !!python/object/apply:numpy._core.multiarray.scalar
 - !!binary |
   xjgwzSgiqT8=
 demand_noise_scale: 0.05
-holding_cost: !!python/object/apply:numpy._core.multiarray.scalar
-- *id001
-- !!binary |
-  ShgAoONxzj8=
+holding_cost: 0.05
 holding_rate_k: 10.0
 holding_rate_x0: 0.25
 initial_inventory: 200
-linear_base_rate: 0.05
-linear_excess_penalty: 0.05
+linear_base_rate: 0.02
+linear_excess_penalty: 0.03
 periods_per_year: 12
 price_elasticity: !!python/object/apply:numpy._core.multiarray.scalar
 - *id001
 - !!binary |
   5ZYG6zsar78=
 price_tiers:
-- 20.0
 - 28.0
 - 32.0
 - 36.0
-- 38.0
 - 40.0
-- 42.0
 - 44.0
 - 48.0
 - 52.0
+- 56.0
+- 60.0
+- 64.0
 product_category: Clothing
 product_name: Clothing Item
 promotion_multiplier: 1.0177904924403192
@@ -60,13 +57,13 @@ season_effects:
   Spring: 1.0
   Summer: 1.007393217786793
   Winter: 1.0223440364789467
-spoilage_pct: 0.002
-stockout_penalty: 5.0
-storage_fee: 0.15
+spoilage_pct: 0.001
+stockout_penalty: 1.0
+storage_fee: 0.1
 unit_cost: 40
-use_dynamic_holding_cost: true
+use_dynamic_holding_cost: false
 use_fitted_model: true
-use_linear_holding_cost: false
+use_linear_holding_cost: true
 weather_effects:
   Cloudy: 1.0011405441333632
   Rainy: 1.0022823891076467

@@ -20,10 +20,17 @@ except ImportError:
 # Import holding rate utilities
 try:
     from utilities.holding_rate import compute_holding_cost_rate, compute_dynamic_holding_cost
+    from utilities.data_driven_parameters import get_restock_parameters, get_unit_cost, get_all_parameters
+    from utilities.restock_prediction import predict_restock_parameters, get_current_restock_parameters
 except ImportError:
-    print("Warning: holding_rate module not found. Using static holding cost.")
+    print("Warning: utilities modules not found. Using static parameters.")
     compute_holding_cost_rate = None
     compute_dynamic_holding_cost = None
+    get_restock_parameters = None
+    get_unit_cost = None
+    get_all_parameters = None
+    predict_restock_parameters = None
+    get_current_restock_parameters = None
 
 class MSMEConfig:
     """
@@ -39,16 +46,16 @@ class MSMEConfig:
             product_name: str = "Sample Product",
             product_category: str = "Electronics",  # Default to Electronics
             region: str = "North",
-            unit_cost: float = 50,
+            unit_cost: float = 40,         # CHANGED: Reduced from 50 to improve profit margin
             price_tiers: Optional[np.ndarray] = None,
             base_demand: float = 200,         # Default, will be overridden by fitted model
             # Inventory management parameters
             holding_cost: float = 0.05,
-            initial_inventory: int = 150,
-            restock_level: int = 30,
-            restock_amount: int = 120,
-            restock_period: int = 7,
-            stockout_penalty: float = 5.0,
+            initial_inventory: int = 80,    # Further reduced to lower initial investment
+            restock_level: int = 30,        # CHANGED: Reduced to avoid excessive restocking
+            restock_amount: int = 100,      # CHANGED: Reduced to minimize capital tied up in inventory
+            restock_period: int = 6,        # CHANGED: Adjusted for balance
+            stockout_penalty: float = 1.0,   # CHANGED: Further reduced to 1.0
             # Parameters for the log-log demand model - will be set by fitted model
             price_elasticity: float = -0.8,
             competitor_sensitivity: float = 0.3,
@@ -59,16 +66,17 @@ class MSMEConfig:
             demand_noise_scale: float = 0.05,
             use_fitted_model: bool = True,    # Always use fitted model by default
             # Parameters for dynamic holding cost
-            use_dynamic_holding_cost: bool = True,
-            storage_fee: float = 0.15,       # FIXED: Reduced from 2.0 to realistic value
+            use_dynamic_holding_cost: bool = False,  # Changed to False to prefer linear model
+            storage_fee: float = 0.10,       # FIXED: Reduced from 0.15 to even more realistic value
             annual_finance_rate: float = 0.12,
             periods_per_year: int = 12,
-            spoilage_pct: float = 0.002,      # FIXED: Reduced from 0.02 to realistic value
+            spoilage_pct: float = 0.001,     # FIXED: Reduced from 0.002 to more realistic value
             holding_rate_x0: float = 0.25,
             holding_rate_k: float = 10.0,
-            use_linear_holding_cost: bool = False,  # NEW: Option to use linear model instead of logistic
-            linear_base_rate: float = 0.05,   # NEW: Base rate for linear model
-            linear_excess_penalty: float = 0.05,  # NEW: Additional rate for excess inventory
+            use_linear_holding_cost: bool = True,  # CHANGED: Always use linear model by default
+            linear_base_rate: float = 0.02,   # OPTIMIZED: Lower base rate (was 0.05)
+            linear_excess_penalty: float = 0.03,  # OPTIMIZED: Lower penalty (was 0.05)
+            use_dynamic_restock: bool = False,   # Whether to use dynamic restock parameter prediction
             config_path: Optional[str] = None
     ):
         """
@@ -105,6 +113,7 @@ class MSMEConfig:
             use_linear_holding_cost: Whether to use linear holding cost model instead of logistic
             linear_base_rate: Base rate for linear holding cost model
             linear_excess_penalty: Additional rate for excess inventory in linear model
+            use_dynamic_restock: Whether to use dynamic restock parameter prediction
             config_path: Path to YAML configuration file to load
         """
         # If config path is provided, load from file
@@ -119,12 +128,12 @@ class MSMEConfig:
         
         # Calculate price tiers as percentage changes from unit cost
         if price_tiers is None:
-            # Define percentage changes
-            # A = {-50%, -30%, -20%, -10%, -5%, 0%, +5%, +10%, +20%, +30%}
+            # Define percentage changes with higher margins
+            # A = {-30%, -20%, -10%, 0%, +10%, +20%, +30%, +40%, +50%, +60%}
             pct_changes = [
-                -0.5, -0.3, -0.2, -0.1, 
-                -0.05, 0.0, 0.05, 0.1, 
-                0.2, 0.3
+                -0.3, -0.2, -0.1, 0.0, 
+                0.1, 0.2, 0.3, 0.4, 
+                0.5, 0.6
             ]
             percentage_changes = np.array(pct_changes)
             # Calculate price tiers as price = unit_cost * (1 + pct)
@@ -197,6 +206,9 @@ class MSMEConfig:
         self.use_linear_holding_cost = use_linear_holding_cost
         self.linear_base_rate = linear_base_rate
         self.linear_excess_penalty = linear_excess_penalty
+        
+        # Dynamic restock parameters
+        self.use_dynamic_restock = use_dynamic_restock
         
         # Always load fitted model parameters (regardless of use_fitted_model)
         # This ensures all demand parameters are properly set from data
@@ -390,8 +402,8 @@ class MSMEConfig:
         
         # If linear model is selected, use a simple linear function
         if hasattr(self, 'use_linear_holding_cost') and self.use_linear_holding_cost:
-            base_rate = self.linear_base_rate if hasattr(self, 'linear_base_rate') else 0.05
-            excess_penalty = self.linear_excess_penalty if hasattr(self, 'linear_excess_penalty') else 0.05
+            base_rate = self.linear_base_rate if hasattr(self, 'linear_base_rate') else 0.02
+            excess_penalty = self.linear_excess_penalty if hasattr(self, 'linear_excess_penalty') else 0.03
             return base_rate + eir * excess_penalty
         
         # Otherwise, use the original dynamic or static holding cost calculation
@@ -416,6 +428,66 @@ class MSMEConfig:
             # Fall back to pre-calculated holding cost
             return self.holding_cost
 
+    @property
+    def should_use_dynamic_restock(self) -> bool:
+        """
+        Check if dynamic restock prediction should be used.
+        
+        Returns:
+            Whether to use dynamic restock parameter prediction
+        """
+        return hasattr(self, 'use_dynamic_restock') and self.use_dynamic_restock and predict_restock_parameters is not None
+        
+    def get_restock_parameters(self, current_time: int, demand_forecast: float = None, 
+                              price: float = None, units_sold: float = None) -> Dict[str, int]:
+        """
+        Get restock parameters, either static or dynamically predicted.
+        
+        Args:
+            current_time: Current time step in simulation
+            demand_forecast: Current demand forecast (optional)
+            price: Current price (optional)
+            units_sold: Recent units sold (optional)
+            
+        Returns:
+            Dictionary with restock parameters
+        """
+        # If dynamic restock is not enabled or the module is not available, return static parameters
+        if not self.should_use_dynamic_restock:
+            return {
+                'restock_period': self.restock_period,
+                'restock_level': self.restock_level,
+                'restock_amount': self.restock_amount
+            }
+            
+        # Use current parameter values if not provided
+        if demand_forecast is None:
+            demand_forecast = self.base_demand
+        if price is None:
+            price = self.price_tiers[len(self.price_tiers) // 2]  # Middle price tier
+        if units_sold is None:
+            units_sold = self.base_demand * 0.8  # Default units sold
+            
+        # Try to predict new parameters if period has been exhausted
+        new_params = predict_restock_parameters(
+            category=self.product_category,
+            demand_forecast=demand_forecast,
+            inventory_level=getattr(self, '_current_inventory', self.initial_inventory),
+            price=price,
+            units_sold=units_sold,
+            current_time=current_time
+        )
+        
+        # If new parameters were predicted, update the config
+        if new_params is not None:
+            self.restock_period = new_params['restock_period']
+            self.restock_level = new_params['restock_level']
+            self.restock_amount = new_params['restock_amount']
+            return new_params
+            
+        # Otherwise, get current parameters
+        return get_current_restock_parameters(self.product_category)
+
 
 def create_default_config() -> MSMEConfig:
     """
@@ -430,95 +502,185 @@ def create_default_config() -> MSMEConfig:
 def create_groceries_config() -> MSMEConfig:
     """
     Create a configuration for the Groceries category
+    with data-driven inventory parameters.
     
     Returns:
         MSMEConfig object for Groceries
     """
+    # Get data-driven parameters
+    if get_all_parameters is not None:
+        params = get_all_parameters("Groceries")
+        initial_inventory = params["initial_inventory"]
+        restock_level = params["restock_level"]
+        restock_amount = params["restock_amount"] 
+        restock_period = params["restock_period"]
+        unit_cost = params["unit_cost"]
+    else:
+        # Use default values from previous analysis if module not available
+        initial_inventory = 262
+        restock_level = 166
+        restock_amount = 110
+        restock_period = 5
+        unit_cost = 10
+    
     return MSMEConfig(
-        product_name="Grocery Item",
+        product_name="Groceries Item",
         product_category="Groceries",
         region="North",
-        unit_cost=10,
-        initial_inventory=400,
-        restock_level=100,
-        restock_amount=300,
-        restock_period=3
+        unit_cost=unit_cost,
+        initial_inventory=initial_inventory,
+        restock_level=restock_level,
+        restock_amount=restock_amount,
+        restock_period=restock_period,
+        use_dynamic_restock=True  # Enable dynamic restock prediction
     )
 
 
 def create_toys_config() -> MSMEConfig:
     """
     Create a configuration for the Toys category
+    with data-driven inventory parameters.
     
     Returns:
         MSMEConfig object for Toys
     """
+    # Get data-driven parameters
+    if get_all_parameters is not None:
+        params = get_all_parameters("Toys")
+        initial_inventory = params["initial_inventory"]
+        restock_level = params["restock_level"]
+        restock_amount = params["restock_amount"] 
+        restock_period = params["restock_period"]
+        unit_cost = params["unit_cost"]
+    else:
+        # Use default values from previous analysis if module not available
+        initial_inventory = 240
+        restock_level = 164
+        restock_amount = 110
+        restock_period = 5
+        unit_cost = 25
+    
     return MSMEConfig(
-        product_name="Toy Item",
+        product_name="Toys Item",
         product_category="Toys",
         region="East",
-        unit_cost=25,
-        initial_inventory=200,
-        restock_level=50,
-        restock_amount=150,
-        restock_period=7
+        unit_cost=unit_cost,
+        initial_inventory=initial_inventory,
+        restock_level=restock_level,
+        restock_amount=restock_amount,
+        restock_period=restock_period,
+        use_dynamic_restock=True  # Enable dynamic restock prediction
     )
 
 
 def create_electronics_config() -> MSMEConfig:
     """
     Create a configuration for the Electronics category
+    with data-driven inventory parameters.
     
     Returns:
         MSMEConfig object for Electronics
     """
+    # Get data-driven parameters
+    if get_all_parameters is not None:
+        params = get_all_parameters("Electronics")
+        initial_inventory = params["initial_inventory"]
+        restock_level = params["restock_level"]
+        restock_amount = params["restock_amount"] 
+        restock_period = params["restock_period"]
+        unit_cost = params["unit_cost"]
+    else:
+        # Use default values from previous analysis if module not available
+        initial_inventory = 278
+        restock_level = 163
+        restock_amount = 110
+        restock_period = 5
+        unit_cost = 75
+    
     return MSMEConfig(
         product_name="Electronics Item",
         product_category="Electronics",
         region="North",
-        unit_cost=75,
-        initial_inventory=150,
-        restock_level=40,
-        restock_amount=100,
-        restock_period=10
+        unit_cost=unit_cost,
+        initial_inventory=initial_inventory,
+        restock_level=restock_level,
+        restock_amount=restock_amount,
+        restock_period=restock_period,
+        use_dynamic_restock=True  # Enable dynamic restock prediction
     )
 
 
 def create_furniture_config() -> MSMEConfig:
     """
     Create a configuration for the Furniture category
+    with data-driven inventory parameters.
     
     Returns:
         MSMEConfig object for Furniture
     """
+    # Get data-driven parameters
+    if get_all_parameters is not None:
+        params = get_all_parameters("Furniture")
+        initial_inventory = params["initial_inventory"]
+        restock_level = params["restock_level"]
+        restock_amount = params["restock_amount"] 
+        restock_period = params["restock_period"]
+        unit_cost = params["unit_cost"]
+    else:
+        # Use default values from previous analysis if module not available
+        initial_inventory = 278
+        restock_level = 166
+        restock_amount = 110
+        restock_period = 5
+        unit_cost = 150
+    
     return MSMEConfig(
         product_name="Furniture Item",
         product_category="Furniture",
         region="West",
-        unit_cost=150,
-        initial_inventory=100,
-        restock_level=20,
-        restock_amount=50,
-        restock_period=14
+        unit_cost=unit_cost,
+        initial_inventory=initial_inventory,
+        restock_level=restock_level,
+        restock_amount=restock_amount,
+        restock_period=restock_period,
+        use_dynamic_restock=True  # Enable dynamic restock prediction
     )
 
 
 def create_clothing_config() -> MSMEConfig:
     """
     Create a configuration for the Clothing category
+    with data-driven inventory parameters.
     
     Returns:
         MSMEConfig object for Clothing
     """
+    # Get data-driven parameters
+    if get_all_parameters is not None:
+        params = get_all_parameters("Clothing")
+        initial_inventory = params["initial_inventory"]
+        restock_level = params["restock_level"]
+        restock_amount = params["restock_amount"] 
+        restock_period = params["restock_period"]
+        unit_cost = params["unit_cost"]
+    else:
+        # Use default values from previous analysis if module not available
+        initial_inventory = 229
+        restock_level = 164
+        restock_amount = 110
+        restock_period = 5
+        unit_cost = 40
+    
     return MSMEConfig(
         product_name="Clothing Item",
         product_category="Clothing",
         region="South",
-        unit_cost=40,
-        initial_inventory=200,
-        restock_level=50,
-        restock_amount=150,
-        restock_period=7
+        unit_cost=unit_cost,
+        initial_inventory=initial_inventory,
+        restock_level=restock_level,
+        restock_amount=restock_amount,
+        restock_period=restock_period,
+        use_dynamic_restock=True  # Enable dynamic restock prediction
     )
 
 
