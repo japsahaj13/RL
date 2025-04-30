@@ -344,17 +344,13 @@ class MSMEEnvironment(gym.Env):
         cost = sales * self.config.unit_cost
         profit = revenue - cost
         
-        # Calculate inventory holding cost
-        # Use dynamic holding cost if enabled, otherwise use static rate
-        if self.config.use_dynamic_holding_cost:
-            # Use predicted demand for next step as the forecast
-            forecast_demand = self._get_demand_forecast()
-            holding_cost_rate = self.config.calculate_holding_cost(
-                inventory=self.inventory,
-                demand_forecast=forecast_demand
-            )
-        else:
-            holding_cost_rate = self.config.holding_cost
+        # Calculate inventory holding cost - always use dynamic calculation
+        # Use predicted demand for next step as the forecast
+        forecast_demand = self._get_demand_forecast()
+        holding_cost_rate = self.config.calculate_holding_cost(
+            inventory=self.inventory,
+            demand_forecast=forecast_demand
+        )
         
         inventory_cost = self.inventory * holding_cost_rate * self.config.unit_cost
         profit -= inventory_cost

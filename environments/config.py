@@ -210,14 +210,26 @@ class MSMEConfig:
                 print("Cannot fit demand models - demand_model_fitting not available!")
                 print("The environment will not work correctly without demand models!")
                 
-        # Calculate initial holding cost if using dynamic model
-        if self.use_dynamic_holding_cost and compute_dynamic_holding_cost is not None:
+        # Always calculate initial holding cost using the dynamic model
+        # Even if use_dynamic_holding_cost is False - we'll always use dynamic calculation
+        if compute_dynamic_holding_cost is not None:
             try:
                 # Initialize with a reasonable default demand forecast
                 self._calculate_initial_holding_cost()
             except Exception as e:
-                print(f"Warning: Failed to calculate dynamic holding cost: {e}. Using static holding cost.")
-                self.use_dynamic_holding_cost = False
+                print(f"Warning: Failed to calculate dynamic holding cost: {e}. Using default value.")
+                # Use a reasonable default value based on the product category
+                if self.product_category == "Groceries":
+                    self.holding_cost = 0.08  # Higher for perishable goods
+                elif self.product_category == "Electronics":
+                    self.holding_cost = 0.06  # Higher for valuable items
+                elif self.product_category == "Furniture":
+                    self.holding_cost = 0.04  # Lower due to low spoilage but higher space needs
+                else:
+                    self.holding_cost = 0.05  # Default value
+        else:
+            print("Warning: dynamic holding cost calculation not available - using default value.")
+            self.holding_cost = 0.05  # Default fallback
     
     def _set_demand_params_from_model(self, params):
         """Helper method to set all demand parameters from fitted model"""
@@ -359,20 +371,27 @@ class MSMEConfig:
         Returns:
             Calculated holding cost rate
         """
-        if not self.use_dynamic_holding_cost or compute_dynamic_holding_cost is None:
+        # Always try to use dynamic calculation first
+        if compute_dynamic_holding_cost is not None:
+            try:
+                return compute_dynamic_holding_cost(
+                    inventory=inventory,
+                    demand_forecast=demand_forecast,
+                    unit_cost=self.unit_cost,
+                    storage_fee=self.storage_fee,
+                    annual_finance_rate=self.annual_finance_rate,
+                    periods_per_year=self.periods_per_year,
+                    spoilage_pct=self.spoilage_pct,
+                    x0=self.holding_rate_x0,
+                    k=self.holding_rate_k
+                )
+            except Exception as e:
+                print(f"Warning: Dynamic holding cost calculation failed: {e}")
+                # Fall back to pre-calculated holding cost
+                return self.holding_cost
+        else:
+            # Fall back to pre-calculated holding cost
             return self.holding_cost
-            
-        return compute_dynamic_holding_cost(
-            inventory=inventory,
-            demand_forecast=demand_forecast,
-            unit_cost=self.unit_cost,
-            storage_fee=self.storage_fee,
-            annual_finance_rate=self.annual_finance_rate,
-            periods_per_year=self.periods_per_year,
-            spoilage_pct=self.spoilage_pct,
-            x0=self.holding_rate_x0,
-            k=self.holding_rate_k
-        )
 
 
 def create_default_config() -> MSMEConfig:
