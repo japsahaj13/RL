@@ -1,0 +1,75 @@
+annual_finance_rate: 0.12
+base_demand: 80.00660530032626
+competitor_effect: 0.5
+competitor_sensitivity: !!python/object/apply:numpy._core.multiarray.scalar
+- &id001 !!python/object/apply:numpy.dtype
+  args:
+  - f8
+  - false
+  - true
+  state: !!python/tuple
+  - 3
+  - <
+  - null
+  - null
+  - null
+  - -1
+  - -1
+  - 0
+- !!binary |
+  Az16qND/kD8=
+demand_noise_scale: 0.05
+holding_cost: !!python/object/apply:numpy._core.multiarray.scalar
+- *id001
+- !!binary |
+  AUtNY3jJ6z8=
+holding_rate_k: 10.0
+holding_rate_x0: 0.25
+initial_inventory: 400
+periods_per_year: 12
+price_elasticity: !!python/object/apply:numpy._core.multiarray.scalar
+- *id001
+- !!binary |
+  W3WuLDy7Eb8=
+price_sensitivity: 1.0
+price_tiers:
+- 5.0
+- 7.0
+- 8.0
+- 9.0
+- 9.5
+- 10.0
+- 10.5
+- 11.0
+- 12.0
+- 13.0
+product_category: Groceries
+product_name: Grocery Item
+promo_boost: 25
+promotion_multiplier: 1.0031554705370105
+region: North
+region_effects:
+  East: 1.0339609461345705
+  North: 1.0
+  South: 1.0111945302471923
+  West: 1.02251437800184
+restock_amount: 300
+restock_level: 100
+restock_period: 3
+season_effects:
+  Autumn: 1.036036939169163
+  Spring: 1.0
+  Summer: 1.0178589976854178
+  Winter: 1.0545395204677923
+seasonal_amplitude: 15
+spoilage_pct: 0.02
+stockout_penalty: 5.0
+storage_fee: 2.0
+unit_cost: 10
+use_dynamic_holding_cost: true
+use_fitted_model: true
+weather_effects:
+  Cloudy: 0.995532137715356
+  Rainy: 0.9910842372241064
+  Snowy: 0.9866562093397075
+  Sunny: 1.0

@@ -1,0 +1,75 @@
+annual_finance_rate: 0.12
+base_demand: 89.85864657991849
+competitor_effect: 0.5
+competitor_sensitivity: !!python/object/apply:numpy._core.multiarray.scalar
+- &id001 !!python/object/apply:numpy.dtype
+  args:
+  - f8
+  - false
+  - true
+  state: !!python/tuple
+  - 3
+  - <
+  - null
+  - null
+  - null
+  - -1
+  - -1
+  - 0
+- !!binary |
+  1sAkYlPeuL8=
+demand_noise_scale: 0.05
+holding_cost: !!python/object/apply:numpy._core.multiarray.scalar
+- *id001
+- !!binary |
+  GYNdO56c8D8=
+holding_rate_k: 10.0
+holding_rate_x0: 0.25
+initial_inventory: 200
+periods_per_year: 12
+price_elasticity: !!python/object/apply:numpy._core.multiarray.scalar
+- *id001
+- !!binary |
+  Id77b8yhuT8=
+price_sensitivity: 1.0
+price_tiers:
+- 12.5
+- 17.5
+- 20.0
+- 22.5
+- 23.75
+- 25.0
+- 26.25
+- 27.500000000000004
+- 30.0
+- 32.5
+product_category: Toys
+product_name: Toy Item
+promo_boost: 25
+promotion_multiplier: 0.9790215417048954
+region: East
+region_effects:
+  East: 0.9887438599545804
+  North: 1.0
+  South: 0.9962337867631589
+  West: 0.9924817578884632
+restock_amount: 150
+restock_level: 50
+restock_period: 7
+season_effects:
+  Autumn: 0.9996083499177454
+  Spring: 1.0
+  Summer: 0.9998041557813937
+  Winter: 0.9994125824015434
+seasonal_amplitude: 15
+spoilage_pct: 0.02
+stockout_penalty: 5.0
+storage_fee: 2.0
+unit_cost: 25
+use_dynamic_holding_cost: true
+use_fitted_model: true
+weather_effects:
+  Cloudy: 0.9932846570761019
+  Rainy: 0.9866144099827894
+  Snowy: 0.9799889558860955
+  Sunny: 1.0
