@@ -75,7 +75,14 @@ def train_dqn(
     config = load_config(config_name)
     
     # Create environment
-    env = MSMEEnvironment(config)
+    env = MSMEEnvironment(
+        config=config,
+        # Use optimized reward weights from hyperparameter tuning
+        alpha=0.1319,  # Revenue weight (reduced from 0.2)
+        beta=0.2316,   # Market share weight (reduced from 0.5)
+        gamma=0.3654,  # Inventory/price stability weight (increased from 0.2)
+        delta=0.2712   # Profit margin weight (increased from 0.2)
+    )
     
     # Create agent
     agent = MSMEPricingAgent(
@@ -148,11 +155,65 @@ def train_a2c(
     config = load_config(config_name)
     
     # Create environment
-    env = MSMEEnvironment(config)
+    env = MSMEEnvironment(
+        config=config,
+        # Use optimized reward weights from hyperparameter tuning
+        alpha=0.1319,  # Revenue weight (reduced from 0.2)
+        beta=0.2316,   # Market share weight (reduced from 0.5)
+        gamma=0.3654,  # Inventory/price stability weight (increased from 0.2)
+        delta=0.2712   # Profit margin weight (increased from 0.2)
+    )
     
-    # Placeholder for A2C implementation
-    print("A2C implementation coming soon. Using DQN instead.")
-    return train_dqn(config_name, num_episodes, save_path)
+    # Create agent
+    agent = MSMEPricingAgent(
+        env=env,
+        gamma=0.95,
+        epsilon_start=0.9,
+        epsilon_end=0.05,
+        epsilon_decay=200,
+        learning_rate=0.001,
+        batch_size=64,
+        hidden_size=128,
+        target_update=10,
+        memory_size=10000,
+        use_double_dqn=True,
+        use_dueling=True
+    )
+    
+    # Create output directory
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    output_dir = os.path.join("results", config_name, f"a2c_{timestamp}")
+    os.makedirs(output_dir, exist_ok=True)
+    
+    # Save configuration
+    config.save_to_yaml(os.path.join(output_dir, "config.yaml"))
+    
+    # Train the agent
+    training_metrics = agent.train(
+        num_episodes=num_episodes,
+        print_every=10,
+        visualization_dir=os.path.join(output_dir, "visualizations")
+    )
+    
+    # Save the agent
+    if save_path is None:
+        save_path = os.path.join(output_dir, "agent")
+    agent.save(save_path)
+    
+    # Evaluate the agent
+    eval_metrics = agent.evaluate(num_episodes=10)
+    
+    # Save metrics
+    metrics = {
+        "training": training_metrics,
+        "evaluation": eval_metrics
+    }
+    
+    # Save metrics as YAML
+    with open(os.path.join(output_dir, "metrics.yaml"), 'w') as f:
+        yaml.dump(metrics, f)
+    
+    return training_metrics
 
 def train_ppo(
         config_name: str = 'default',
@@ -174,11 +235,65 @@ def train_ppo(
     config = load_config(config_name)
     
     # Create environment
-    env = MSMEEnvironment(config)
+    env = MSMEEnvironment(
+        config=config,
+        # Use optimized reward weights from hyperparameter tuning
+        alpha=0.1319,  # Revenue weight (reduced from 0.2)
+        beta=0.2316,   # Market share weight (reduced from 0.5)
+        gamma=0.3654,  # Inventory/price stability weight (increased from 0.2)
+        delta=0.2712   # Profit margin weight (increased from 0.2)
+    )
     
-    # Placeholder for PPO implementation
-    print("PPO implementation coming soon. Using DQN instead.")
-    return train_dqn(config_name, num_episodes, save_path)
+    # Create agent
+    agent = MSMEPricingAgent(
+        env=env,
+        gamma=0.95,
+        epsilon_start=0.9,
+        epsilon_end=0.05,
+        epsilon_decay=200,
+        learning_rate=0.001,
+        batch_size=64,
+        hidden_size=128,
+        target_update=10,
+        memory_size=10000,
+        use_double_dqn=True,
+        use_dueling=True
+    )
+    
+    # Create output directory
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    output_dir = os.path.join("results", config_name, f"ppo_{timestamp}")
+    os.makedirs(output_dir, exist_ok=True)
+    
+    # Save configuration
+    config.save_to_yaml(os.path.join(output_dir, "config.yaml"))
+    
+    # Train the agent
+    training_metrics = agent.train(
+        num_episodes=num_episodes,
+        print_every=10,
+        visualization_dir=os.path.join(output_dir, "visualizations")
+    )
+    
+    # Save the agent
+    if save_path is None:
+        save_path = os.path.join(output_dir, "agent")
+    agent.save(save_path)
+    
+    # Evaluate the agent
+    eval_metrics = agent.evaluate(num_episodes=10)
+    
+    # Save metrics
+    metrics = {
+        "training": training_metrics,
+        "evaluation": eval_metrics
+    }
+    
+    # Save metrics as YAML
+    with open(os.path.join(output_dir, "metrics.yaml"), 'w') as f:
+        yaml.dump(metrics, f)
+    
+    return training_metrics
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train an RL agent on the MSME Pricing environment")

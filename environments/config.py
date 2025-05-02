@@ -276,24 +276,48 @@ class MSMEConfig:
         Args:
             config_path: Path to the YAML configuration file
         """
-        with open(config_path, 'r') as f:
-            config = yaml.safe_load(f)
-            
-        # Set attributes from config file
-        for key, value in config.items():
-            setattr(self, key, value)
-            
-        # Convert price_tiers to numpy array if it exists
-        if hasattr(self, 'price_tiers') and self.price_tiers is not None:
-            self.price_tiers = np.array(self.price_tiers)
-        
-        # Always load fitted demand model params, even if loaded from YAML
         try:
-            self._load_fitted_model_params()
+            with open(config_path, 'r') as f:
+                config = yaml.safe_load(f)
+                
+            # Set attributes from config file
+            for key, value in config.items():
+                setattr(self, key, value)
+                
+            # Convert price_tiers to numpy array if it exists
+            if hasattr(self, 'price_tiers') and self.price_tiers is not None:
+                self.price_tiers = np.array(self.price_tiers)
+            
+            # Always load fitted demand model params, even if loaded from YAML
+            try:
+                self._load_fitted_model_params()
+            except Exception as e:
+                print(f"Error loading fitted model parameters when loading from YAML: {e}")
+                print("This is critical - the environment may not work correctly!")
         except Exception as e:
-            print(f"Error loading fitted model parameters when loading from YAML: {e}")
-            print("This is critical - the environment may not work correctly!")
-        
+            print(f"Error loading YAML config file {config_path}: {e}")
+            print("Falling back to default configuration")
+            # Use default configuration for the given product category
+            if hasattr(self, 'product_category'):
+                category = self.product_category
+            else:
+                category = "Electronics"  # Default category
+                
+            if category == "Groceries":
+                config_obj = create_groceries_config()
+            elif category == "Toys":
+                config_obj = create_toys_config()
+            elif category == "Furniture":
+                config_obj = create_furniture_config()
+            elif category == "Clothing":
+                config_obj = create_clothing_config()
+            else:  # Default to Electronics
+                config_obj = create_default_config()
+                
+            # Copy attributes from the created config object
+            for key, value in config_obj.__dict__.items():
+                setattr(self, key, value)
+    
     def _load_fitted_model_params(self) -> None:
         """
         Load fitted model parameters from demand_models.pkl
@@ -682,6 +706,27 @@ def create_clothing_config() -> MSMEConfig:
         restock_period=restock_period,
         use_dynamic_restock=True  # Enable dynamic restock prediction
     )
+
+
+def load_config(config_name: str) -> MSMEConfig:
+    """
+    Load a configuration by name.
+    
+    Args:
+        config_name: Name of the configuration to load (without _config.yaml suffix)
+        
+    Returns:
+        MSMEConfig object
+    """
+    config_path = os.path.join("config", f"{config_name}_config.yaml")
+    if not os.path.exists(config_path):
+        # If config doesn't exist with name, try without suffix
+        config_path = os.path.join("config", f"{config_name}.yaml")
+        
+    if not os.path.exists(config_path):
+        raise FileNotFoundError(f"Configuration file {config_path} not found")
+        
+    return MSMEConfig(config_path=config_path)
 
 
 if __name__ == "__main__":
