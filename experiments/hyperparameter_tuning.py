@@ -2,8 +2,7 @@
 Hyperparameter tuning for MSME Pricing RL project.
 
 This module implements hyperparameter tuning for the reward weights and other 
-key parameters to optimize agent behavior, particularly to reduce price volatility
-and improve profit stability.
+key parameters to optimize agent behavior with a focus on our updated reward function.
 """
 
 import os
@@ -28,7 +27,7 @@ def tune_hyperparameters(
     output_dir: Optional[str] = None
 ) -> Dict:
     """
-    Run hyperparameter tuning for reward weights and environment parameters.
+    Run hyperparameter tuning for the updated reward function weights and environment parameters.
     
     Args:
         agent_type: Type of agent to tune ('dqn')
@@ -43,7 +42,7 @@ def tune_hyperparameters(
     print(f"Starting hyperparameter tuning for {agent_type} agent with {config_name} config")
     print(f"Running {num_trials} trials with {num_episodes} episodes each")
     
-    # Create Optuna study for maximizing profit stability and reward
+    # Create Optuna study for maximizing profit and stability
     study = optuna.create_study(
         direction="maximize",
         study_name=f"{agent_type}_{config_name}_tuning"
@@ -53,18 +52,12 @@ def tune_hyperparameters(
     def objective(trial):
         # Sample hyperparameters to tune
         
-        # Reward weights
-        alpha = trial.suggest_float("alpha", 0.1, 0.5)  # Revenue weight
-        beta = trial.suggest_float("beta", 0.1, 0.7)    # Market share weight
-        gamma = trial.suggest_float("gamma", 0.2, 0.8)  # Inventory/price stability weight
-        delta = trial.suggest_float("delta", 0.1, 0.7)  # Profit margin weight
-        
-        # Normalize weights to sum to 1.0
-        total = alpha + beta + gamma + delta
-        alpha /= total
-        beta /= total
-        gamma /= total
-        delta /= total
+        # Reward weights for the updated reward function
+        alpha = trial.suggest_float("alpha", 0.1, 0.5)     # Holding cost penalty weight
+        beta = trial.suggest_float("beta", 0.2, 0.6)       # Stockout penalty weight
+        gamma = trial.suggest_float("gamma", 0.1, 0.3)     # Price instability penalty weight
+        delta = trial.suggest_float("delta", 0.3, 0.7)     # Discount penalty weight
+        row = trial.suggest_float("row", 0.01, 0.1)        # Fill rate bonus weight
         
         # Create environment with sampled parameters
         config = MSMEConfig(config_path=f"config/{config_name}_config.yaml" if config_name != "default" else None)
@@ -72,10 +65,11 @@ def tune_hyperparameters(
         # Create environment
         env = MSMEEnvironment(
             config=config,
-            alpha=alpha,   # Revenue weight
-            beta=beta,     # Market share weight
-            gamma=gamma,   # Inventory/price stability weight
-            delta=delta,   # Profit margin weight
+            alpha=alpha,   # Holding cost penalty weight
+            beta=beta,     # Stockout penalty weight
+            gamma=gamma,   # Price instability penalty weight
+            delta=delta,   # Discount penalty weight
+            row=row,       # Fill rate bonus weight
             use_data_driven_competitor=True
         )
         
@@ -83,20 +77,22 @@ def tune_hyperparameters(
         agent = MSMEPricingAgent(
             env=env,
             gamma=trial.suggest_float("discount_factor", 0.9, 0.99),
-            epsilon_decay=trial.suggest_float("epsilon_decay", 0.9, 0.995) * num_episodes,
+            epsilon_decay=trial.suggest_float("epsilon_decay", 150, 250),
             learning_rate=trial.suggest_float("learning_rate", 1e-4, 1e-2, log=True)
         )
         
         # Train agent
         rewards = []
-        profit_stabilities = []
+        profits = []
+        fill_rates = []
         price_stabilities = []
         
         for episode in range(num_episodes):
             state, _ = env.reset()
             episode_reward = 0
+            episode_profit = 0
             price_changes = []
-            profits = []
+            episode_fill_rates = []
             
             done = False
             truncated = False
@@ -108,15 +104,21 @@ def tune_hyperparameters(
                 # Take step in environment
                 next_state, reward, done, truncated, info = env.step(action)
                 
-                # Save price change and profit
+                # Track metrics
+                episode_reward += reward
+                if 'profit' in info:
+                    episode_profit += info['profit']
+                
+                # Track price stability
                 if len(env.price_history) >= 2:
                     prev_price = env.price_history[-2]
                     curr_price = env.price_history[-1]
-                    price_change = abs(curr_price - prev_price) / prev_price
+                    price_change = abs(curr_price - prev_price)
                     price_changes.append(price_change)
                 
-                if 'profit' in info:
-                    profits.append(info['profit'])
+                # Track fill rate
+                if 'fill_rate' in info:
+                    episode_fill_rates.append(info['fill_rate'])
                 
                 # Save transition to memory
                 agent.memory.push(
@@ -130,9 +132,8 @@ def tune_hyperparameters(
                 # Optimize model
                 loss = agent.optimize_model()
                 
-                # Update state and reward
+                # Update state
                 state = next_state
-                episode_reward += reward
             
             # Update target network
             if episode % agent.target_update == 0:
@@ -141,28 +142,30 @@ def tune_hyperparameters(
             # Track episode metrics
             agent.episodes_done += 1
             rewards.append(episode_reward)
+            profits.append(episode_profit)
             
             # Calculate price stability (negative of average price change)
             if len(price_changes) > 0:
                 price_stability = -np.mean(price_changes)
                 price_stabilities.append(price_stability)
             
-            # Calculate profit stability (negative of profit standard deviation)
-            if len(profits) > 1:
-                profit_stability = -np.std(profits)
-                profit_stabilities.append(profit_stability)
+            # Calculate average fill rate
+            if len(episode_fill_rates) > 0:
+                avg_fill_rate = np.mean(episode_fill_rates)
+                fill_rates.append(avg_fill_rate)
         
         # Calculate metrics for optimization
         avg_reward = np.mean(rewards[-10:])  # Average reward of last 10 episodes
+        avg_profit = np.mean(profits[-10:])  # Average profit of last 10 episodes
         
         # Price stability score (higher is better)
         price_stability_score = np.mean(price_stabilities) if price_stabilities else -1.0
         
-        # Profit stability score (higher is better)
-        profit_stability_score = np.mean(profit_stabilities) if profit_stabilities else -1.0
+        # Fill rate score (higher is better)
+        fill_rate_score = np.mean(fill_rates) if fill_rates else 0.0
         
-        # Combined objective: balance reward and stability
-        combined_score = 0.6 * avg_reward + 0.2 * price_stability_score + 0.2 * profit_stability_score
+        # Combined objective: balance profit, reward, price stability, and fill rate
+        combined_score = 0.5 * avg_profit + 0.2 * avg_reward + 0.2 * price_stability_score + 0.1 * fill_rate_score
         
         return combined_score
     
@@ -173,26 +176,14 @@ def tune_hyperparameters(
     best_params = study.best_params
     best_value = study.best_value
     
-    # Normalize weights to sum to 1.0
-    weights_sum = (
-        best_params["alpha"] + 
-        best_params["beta"] + 
-        best_params["gamma"] + 
-        best_params["delta"]
-    )
-    
-    best_params["alpha"] /= weights_sum
-    best_params["beta"] /= weights_sum
-    best_params["gamma"] /= weights_sum
-    best_params["delta"] /= weights_sum
-    
     # Print best parameters
     print("\nBest Hyperparameters:")
     print(f"Reward Weights:")
-    print(f"  alpha (revenue): {best_params['alpha']:.4f}")
-    print(f"  beta (market share): {best_params['beta']:.4f}")
-    print(f"  gamma (inventory/price stability): {best_params['gamma']:.4f}")
-    print(f"  delta (profit margin): {best_params['delta']:.4f}")
+    print(f"  alpha (holding cost penalty): {best_params['alpha']:.4f}")
+    print(f"  beta (stockout penalty): {best_params['beta']:.4f}")
+    print(f"  gamma (price instability penalty): {best_params['gamma']:.4f}")
+    print(f"  delta (discount penalty): {best_params['delta']:.4f}")
+    print(f"  row (fill rate bonus): {best_params['row']:.4f}")
     
     print(f"Agent Parameters:")
     print(f"  learning_rate: {best_params['learning_rate']:.6f}")
@@ -209,10 +200,11 @@ def tune_hyperparameters(
         with open(output_path, 'w') as f:
             f.write("Best Hyperparameters:\n")
             f.write(f"Reward Weights:\n")
-            f.write(f"  alpha (revenue): {best_params['alpha']:.4f}\n")
-            f.write(f"  beta (market share): {best_params['beta']:.4f}\n")
-            f.write(f"  gamma (inventory/price stability): {best_params['gamma']:.4f}\n")
-            f.write(f"  delta (profit margin): {best_params['delta']:.4f}\n")
+            f.write(f"  alpha (holding cost penalty): {best_params['alpha']:.4f}\n")
+            f.write(f"  beta (stockout penalty): {best_params['beta']:.4f}\n")
+            f.write(f"  gamma (price instability penalty): {best_params['gamma']:.4f}\n")
+            f.write(f"  delta (discount penalty): {best_params['delta']:.4f}\n")
+            f.write(f"  row (fill rate bonus): {best_params['row']:.4f}\n")
             
             f.write(f"Agent Parameters:\n")
             f.write(f"  learning_rate: {best_params['learning_rate']:.6f}\n")
@@ -222,15 +214,27 @@ def tune_hyperparameters(
             f.write(f"\nBest Combined Score: {best_value:.4f}\n")
         
         print(f"Saved optimized parameters to {output_path}")
+        
+        # Also create a YAML config file for easy loading in main training scripts
+        yaml_path = os.path.join(output_dir, f"{agent_type}_{config_name}_reward_weights.yaml")
+        with open(yaml_path, 'w') as f:
+            f.write(f"# Optimized reward weights for {agent_type} agent with {config_name} config\n")
+            f.write(f"alpha: {best_params['alpha']:.4f}  # Holding cost penalty weight\n")
+            f.write(f"beta: {best_params['beta']:.4f}  # Stockout penalty weight\n")
+            f.write(f"gamma: {best_params['gamma']:.4f}  # Price instability penalty weight\n")
+            f.write(f"delta: {best_params['delta']:.4f}  # Discount penalty weight\n")
+            f.write(f"row: {best_params['row']:.4f}  # Fill rate bonus weight\n")
+        
+        print(f"Saved optimized reward weights to {yaml_path}")
     
     return best_params
 
 if __name__ == "__main__":
-    # Test the tuning function
+    # Run the tuning function
     best_params = tune_hyperparameters(
         agent_type='dqn',
-        config_name='default',
-        num_trials=15,
-        num_episodes=15,
+        config_name='electronics',
+        num_trials=20,
+        num_episodes=30,
         output_dir='results/tuning'
     ) 

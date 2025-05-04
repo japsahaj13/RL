@@ -31,26 +31,62 @@ def train(args):
     print(f"Configuration: {args.config}")
     print(f"Episodes: {args.episodes}")
     
+    # Try to load optimized reward weights
+    reward_weights = {}
+    reward_weights_path = os.path.join(PROJECT_ROOT, 'config', f"{args.agent}_{args.config}_reward_weights.yaml")
+    default_weights_path = os.path.join(PROJECT_ROOT, 'config', 'default_reward_weights.yaml')
+    
+    if os.path.exists(reward_weights_path):
+        print(f"Loading optimized reward weights from {reward_weights_path}")
+        try:
+            import yaml
+            with open(reward_weights_path, 'r') as f:
+                reward_weights = yaml.safe_load(f)
+            print(f"Using optimized weights: alpha={reward_weights.get('alpha', 0.3)}, beta={reward_weights.get('beta', 0.4)}, gamma={reward_weights.get('gamma', 0.2)}, delta={reward_weights.get('delta', 0.5)}, row={reward_weights.get('row', 0.05)}")
+        except Exception as e:
+            print(f"Error loading reward weights: {e}")
+    elif os.path.exists(default_weights_path):
+        print(f"Loading default reward weights from {default_weights_path}")
+        try:
+            import yaml
+            with open(default_weights_path, 'r') as f:
+                reward_weights = yaml.safe_load(f)
+            print(f"Using default weights: alpha={reward_weights.get('alpha', 0.3)}, beta={reward_weights.get('beta', 0.4)}, gamma={reward_weights.get('gamma', 0.2)}, delta={reward_weights.get('delta', 0.5)}, row={reward_weights.get('row', 0.05)}")
+        except Exception as e:
+            print(f"Error loading default reward weights: {e}")
+    else:
+        print("Using hardcoded default reward weights")
+        reward_weights = {
+            'alpha': 0.3,
+            'beta': 0.4,
+            'gamma': 0.2,
+            'delta': 0.5,
+            'row': 0.05
+        }
+    
     if args.agent == 'dqn':
         from experiments.train import train_dqn
         train_dqn(
             config_name=args.config,
             num_episodes=args.episodes,
-            save_path=args.output
+            save_path=args.output,
+            reward_weights=reward_weights
         )
     elif args.agent == 'a2c':
         from experiments.train import train_a2c
         train_a2c(
             config_name=args.config,
             num_episodes=args.episodes,
-            save_path=args.output
+            save_path=args.output,
+            reward_weights=reward_weights
         )
     elif args.agent == 'ppo':
         from experiments.train import train_ppo
         train_ppo(
             config_name=args.config,
             num_episodes=args.episodes,
-            save_path=args.output
+            save_path=args.output,
+            reward_weights=reward_weights
         )
     else:
         print(f"Unknown agent: {args.agent}")

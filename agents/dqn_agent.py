@@ -255,6 +255,7 @@ class MSMEPricingAgent:
             'avg_losses': [],
             'final_inventories': [],
             'profits': [],
+            'pure_profits': [],  # Add pure economic profit tracking
             'sales': []
         }
         
@@ -273,6 +274,7 @@ class MSMEPricingAgent:
             episode_sales = []
             episode_inventories = []
             episode_profits = []
+            episode_pure_profits = []  # Track pure economic profit
             
             while not done:
                 # Select and execute action
@@ -304,6 +306,10 @@ class MSMEPricingAgent:
                 episode_inventories.append(info['inventory'])
                 episode_profits.append(info['profit'])
                 
+                # Track pure economic profit if available
+                if 'pure_profit' in info:
+                    episode_pure_profits.append(info['pure_profit'])
+                
                 # Optimize model
                 loss = self.optimize_model()
                 episode_loss += loss
@@ -326,6 +332,10 @@ class MSMEPricingAgent:
             episode_info['profits'].append(sum(episode_profits))
             episode_info['sales'].append(sum(episode_sales))
             
+            # Store pure economic profit if available
+            if episode_pure_profits:
+                episode_info['pure_profits'].append(sum(episode_pure_profits))
+            
             # Print progress
             if (episode + 1) % print_every == 0:
                 avg_reward = np.mean(episode_info['rewards'][-print_every:])
@@ -337,7 +347,12 @@ class MSMEPricingAgent:
                 print(f"Avg Length: {avg_length:.2f}")
                 print(f"Avg Loss: {avg_loss:.6f}")
                 print(f"Epsilon: {self.epsilon:.2f}")
-                print(f"Total Profit: {sum(episode_profits):.2f}")
+                
+                # Display both profit metrics if available
+                if episode_pure_profits:
+                    print(f"Pure Economic Profit: {sum(episode_pure_profits):.2f}")
+                
+                print(f"Total Profit (with operational costs): {sum(episode_profits):.2f}")
                 print("-" * 40)
             
             # Visualize results periodically
@@ -380,6 +395,7 @@ class MSMEPricingAgent:
         
         total_reward = 0
         total_profit = 0
+        total_pure_profit = 0  # Track pure economic profit
         total_sales = 0
         episode_lengths = []
         
@@ -388,6 +404,7 @@ class MSMEPricingAgent:
             done = False
             episode_reward = 0
             episode_profit = 0
+            episode_pure_profit = 0  # Track pure economic profit
             episode_sales = 0
             step = 0
             
@@ -406,6 +423,8 @@ class MSMEPricingAgent:
                 # Update metrics
                 episode_reward += reward
                 episode_profit += info['profit']
+                if 'pure_profit' in info:
+                    episode_pure_profit += info['pure_profit']
                 episode_sales += info['sales']
                 step += 1
                 
@@ -415,32 +434,46 @@ class MSMEPricingAgent:
             # Update totals
             total_reward += episode_reward
             total_profit += episode_profit
+            total_pure_profit += episode_pure_profit
             total_sales += episode_sales
             episode_lengths.append(step)
             
-            print(f"Episode {episode+1}: Reward = {episode_reward:.2f}, Profit = {episode_profit:.2f}")
+            # Display both profit metrics if available
+            if 'pure_profit' in info:
+                print(f"Episode {episode+1}: Reward = {episode_reward:.2f}, Pure Profit = {episode_pure_profit:.2f}, Operational Profit = {episode_profit:.2f}")
+            else:
+                print(f"Episode {episode+1}: Reward = {episode_reward:.2f}, Profit = {episode_profit:.2f}")
         
         # Calculate averages
         avg_reward = total_reward / num_episodes
         avg_profit = total_profit / num_episodes
+        avg_pure_profit = total_pure_profit / num_episodes
         avg_sales = total_sales / num_episodes
         avg_length = sum(episode_lengths) / num_episodes
         
         print(f"Evaluation Results:")
         print(f"Average Reward: {avg_reward:.2f}")
-        print(f"Average Profit: {avg_profit:.2f}")
+        if total_pure_profit > 0:
+            print(f"Average Pure Economic Profit: {avg_pure_profit:.2f}")
+        print(f"Average Operational Profit: {avg_profit:.2f}")
         print(f"Average Sales: {avg_sales:.2f}")
         print(f"Average Episode Length: {avg_length:.2f}")
         
         # Switch back to training mode
         self.policy_net.train()
         
-        return {
+        result = {
             'avg_reward': avg_reward,
             'avg_profit': avg_profit,
             'avg_sales': avg_sales,
             'avg_length': avg_length
         }
+        
+        # Add pure economic profit if available
+        if total_pure_profit > 0:
+            result['avg_pure_profit'] = avg_pure_profit
+            
+        return result
     
     def plot_training_progress(self, save_path: Optional[str] = None):
         """
@@ -556,13 +589,13 @@ class MSMEPricingAgent:
         plt.title('Cumulative Profit')
         plt.grid(True)
         
-        # Plot market share
+        # Plot fill rate (percent of demand fulfilled)
         plt.subplot(3, 2, 6)
-        market_share = [s / (d + 1e-6) for s, d in zip(episode_info['sales'], episode_info['demands'])]
-        plt.plot(market_share)
+        fill_rate = [s / (d + 1e-6) for s, d in zip(episode_info['sales'], episode_info['demands'])]
+        plt.plot(fill_rate)
         plt.xlabel('Time Step')
-        plt.ylabel('Market Share')
-        plt.title('Market Share')
+        plt.ylabel('Fill Rate')
+        plt.title('Fill Rate (Demand Fulfilled)')
         plt.grid(True)
         
         plt.suptitle(f"Episode {episode_info['episode']} Results", fontsize=16)

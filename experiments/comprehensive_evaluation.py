@@ -225,6 +225,10 @@ def run_evaluation_episode(
         state = next_state
     
     # Calculate metrics
+    # Calculate fill rate
+    total_demand = sum(demands)
+    fill_rate = episode_sales / (total_demand + 1e-6) if total_demand > 0 else 0
+    
     metrics = {
         'reward': episode_reward,
         'profit': episode_profit,
@@ -232,7 +236,7 @@ def run_evaluation_episode(
         'avg_price': np.mean(prices),
         'price_stability': -np.std(prices) / np.mean(prices),  # Negative coefficient of variation
         'profit_stability': -np.std(profits) / (np.mean(profits) + 1e-6),  # Avoid division by zero
-        'market_share': episode_sales / (env.last_demand * env.time_step + 1e-6),
+        'fill_rate': fill_rate,  # Correctly calculated fill rate
         'inventory_efficiency': episode_sales / (env.config.initial_inventory + env.config.restock_amount)
     }
     
@@ -259,14 +263,16 @@ def evaluate_agent(
     # Load configuration
     config = load_config(config_name)
     
-    # Create optimized environment
+    # Create environment with standard weights
+    # We should use the same weights as during training
     env = MSMEEnvironment(
         config=config,
-        # Use optimized reward weights from hyperparameter tuning
-        alpha=0.1319,  # Revenue weight
-        beta=0.2316,   # Market share weight
-        gamma=0.3654,  # Inventory/price stability weight
-        delta=0.2712   # Profit margin weight
+        # Use standard reward weights
+        alpha=0.2,     # Holding cost penalty weight
+        beta=0.5,      # Stockout penalty weight
+        gamma=0.6,     # Price stability penalty weight (increased from default 0.2)
+        delta=0.2,     # Discount penalty weight
+        row=0.1        # Fill rate bonus weight
     )
     
     # Create and load RL agent
@@ -548,7 +554,7 @@ def main():
     print("=" * 80)
     
     # Create a simple dataframe for console display
-    metrics = ['reward', 'profit', 'sales', 'price_stability', 'profit_stability']
+    metrics = ['reward', 'profit', 'sales', 'fill_rate', 'price_stability', 'profit_stability']
     summary = {}
     
     for method, data in results['comparison'].items():

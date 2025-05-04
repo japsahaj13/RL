@@ -5,20 +5,24 @@ This will analyze how competitors price their products relative to ours
 and create models to predict competitor behavior.
 """
 
+import os
 from demand_modeling.competitor_price_modeling import fit_competitor_price_models
 
 if __name__ == "__main__":
     print("Generating competitor price models...")
     
+    # Create models/saved directory if it doesn't exist
+    os.makedirs('models/saved', exist_ok=True)
+    
     # Fit and save models
     models = fit_competitor_price_models(
         csv_path='data/retail_store_inventory.csv',
-        save_path='competitor_models.pkl',
+        save_path='models/saved/competitor_models.pkl',
         use_advanced_model=True  # Use RandomForest for better accuracy
     )
     
     print("\nCompetitor pricing model generation complete!")
-    print("The models have been saved to competitor_models.pkl")
+    print("The models have been saved to models/saved/competitor_models.pkl")
     
     # Print summary
     print("\nSummary of competitor pricing strategies:")

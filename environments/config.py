@@ -129,11 +129,10 @@ class MSMEConfig:
         # Calculate price tiers as percentage changes from unit cost
         if price_tiers is None:
             # Define percentage changes with higher margins
-            # A = {-30%, -20%, -10%, 0%, +10%, +20%, +30%, +40%, +50%, +60%}
+            # A = {-50%, -30%, -20%, -10%, -5%, 0%, +5%, +10%, +20%, +30%}
             pct_changes = [
-                -0.3, -0.2, -0.1, 0.0, 
-                0.1, 0.2, 0.3, 0.4, 
-                0.5, 0.6
+                -0.5, -0.3, -0.2, -0.1, -0.05, 
+                0.0, 0.05, 0.1, 0.2, 0.3
             ]
             percentage_changes = np.array(pct_changes)
             # Calculate price tiers as price = unit_cost * (1 + pct)
@@ -324,8 +323,11 @@ class MSMEConfig:
         
         This method loads parameters for the specified product category.
         """
-        # First check in the project root
+        # First check in the models/saved directory, then in other locations
         pickle_paths = [
+            'models/saved/enhanced_demand_models.pkl',  # Try enhanced model first
+            'models/saved/demand_models.pkl',
+            'enhanced_demand_models.pkl',
             'demand_models.pkl',
             '../demand_models.pkl',
             os.path.join(os.path.dirname(__file__), '..', 'demand_models.pkl'),
@@ -337,14 +339,19 @@ class MSMEConfig:
         # Try each path
         for path in pickle_paths:
             if os.path.exists(path):
-                print(f"Found demand models at {path}")
+                # Silently load the demand model file
                 with open(path, 'rb') as f:
-                    model_params = pickle.load(f)
+                    model_data = pickle.load(f)
+                    
+                    # Check if this is the enhanced format
+                    if isinstance(model_data, dict) and 'params' in model_data:
+                        model_params = model_data['params']
+                    else:
+                        model_params = model_data
                 break
         
         # If not found, try to fit models from dataset
         if model_params is None and fit_demand_models is not None:
-            print("No demand models found. Fitting models from dataset...")
             model_params = fit_demand_models()
         
         # If still None, raise exception
@@ -405,29 +412,47 @@ class MSMEConfig:
             k=self.holding_rate_k
         )
         
-        print(f"Initial dynamic holding cost calculated: {self.holding_cost:.4f}")
+        # Dynamic holding cost has been calculated
     
     def calculate_holding_cost(self, inventory: float, demand_forecast: float) -> float:
         """
         Calculate holding cost based on current inventory and demand forecast.
         
+        This method returns MONTHLY holding cost rates that should be converted to daily
+        rates by dividing by the number of days in a month (typically 30) in the calling code.
+        
         Args:
             inventory: Current inventory level
-            demand_forecast: Forecasted demand
+            demand_forecast: Forecasted demand per day
             
         Returns:
-            Calculated holding cost rate
+            Calculated monthly holding cost rate
         """
         if inventory <= 0:
             return 0.0
         
-        # Calculate Excess Inventory Rate (EIR)
-        eir = max(0, (inventory - demand_forecast) / inventory)
+        # Get restock period (days until next expected restock)
+        restock_days = self.restock_period if hasattr(self, 'restock_period') else 6
+        
+        # Calculate Excess Inventory Rate (EIR) considering demand over restock period
+        # This accounts for the fact that we're holding inventory to cover demand until next restock
+        expected_demand_until_restock = demand_forecast * restock_days
+        
+        # Calculate optimal inventory level with safety buffer
+        safety_buffer = 0.2  # 20% safety stock
+        optimal_inventory = expected_demand_until_restock * (1 + safety_buffer)
+        
+        # Excess inventory is anything above the optimal level
+        excess_inventory = max(0, inventory - optimal_inventory)
+        eir = excess_inventory / inventory if inventory > 0 else 0
         
         # If linear model is selected, use a simple linear function
         if hasattr(self, 'use_linear_holding_cost') and self.use_linear_holding_cost:
+            # Get monthly rates
             base_rate = self.linear_base_rate if hasattr(self, 'linear_base_rate') else 0.02
             excess_penalty = self.linear_excess_penalty if hasattr(self, 'linear_excess_penalty') else 0.03
+            
+            # Return monthly rate that will be converted to daily rate by the environment
             return base_rate + eir * excess_penalty
         
         # Otherwise, use the original dynamic or static holding cost calculation
@@ -449,7 +474,7 @@ class MSMEConfig:
                 # Fall back to pre-calculated holding cost
                 return self.holding_cost
         else:
-            # Fall back to pre-calculated holding cost
+            # Fall back to pre-calculated holding cost (which is already a monthly rate)
             return self.holding_cost
 
     @property
@@ -465,52 +490,71 @@ class MSMEConfig:
     def get_restock_parameters(self, current_time: int, demand_forecast: float = None, 
                               price: float = None, units_sold: float = None) -> Dict[str, int]:
         """
-        Get restock parameters, either static or dynamically predicted.
+        Get restock parameters. 
+        
+        The parameters are initialized once at the beginning and then used for the
+        entire episode. This ensures consistent restock behavior.
         
         Args:
             current_time: Current time step in simulation
-            demand_forecast: Current demand forecast (optional)
-            price: Current price (optional)
-            units_sold: Recent units sold (optional)
+            demand_forecast: Current demand forecast (optional) - used for initialization only
+            price: Current price (optional) - used for initialization only
+            units_sold: Recent units sold (optional) - used for initialization only
             
         Returns:
             Dictionary with restock parameters
         """
-        # If dynamic restock is not enabled or the module is not available, return static parameters
-        if not self.should_use_dynamic_restock:
-            return {
-                'restock_period': self.restock_period,
-                'restock_level': self.restock_level,
-                'restock_amount': self.restock_amount
-            }
+        # Initialize parameters once if they haven't been set yet
+        if not hasattr(self, '_initialized_restock_params'):
+            # Use the prediction model ONCE to set initial parameters for amount and period
+            if self.should_use_dynamic_restock:
+                try:
+                    # Get initial predictions from model
+                    from utilities.restock_prediction import predict_restock_parameters_once
+                    
+                    # Use current parameter values if not provided
+                    if demand_forecast is None:
+                        demand_forecast = self.base_demand
+                    if price is None:
+                        price = self.price_tiers[len(self.price_tiers) // 2]  # Middle price tier
+                    if units_sold is None:
+                        units_sold = self.base_demand * 0.8  # Default units sold
+                    
+                    params = predict_restock_parameters_once(
+                        category=self.product_category,
+                        demand_forecast=demand_forecast,
+                        inventory_level=getattr(self, '_current_inventory', self.initial_inventory),
+                        price=price,
+                        units_sold=units_sold
+                    )
+                    
+                    # Store the amount and period parameters from the model
+                    if params is not None:
+                        self.restock_period = params['restock_period']
+                        self.restock_amount = params['restock_amount']
+                        # We no longer use the restock_level from the model
+                except Exception as e:
+                    if not hasattr(self, '_restock_error_shown'):
+                        print(f"Warning: Error using restock prediction model: {e}")
+                        print("Using default static restock parameters.")
+                        self._restock_error_shown = True
+            else:
+                if not hasattr(self, '_restock_warning_shown') and hasattr(self, 'use_dynamic_restock') and self.use_dynamic_restock:
+                    print(f"Warning: Cannot use dynamic restock prediction for {self.product_category} - module not available")
+                    print("Using static restock parameters. Consider installing restock prediction module.")
+                    self._restock_warning_shown = True
             
-        # Use current parameter values if not provided
-        if demand_forecast is None:
-            demand_forecast = self.base_demand
-        if price is None:
-            price = self.price_tiers[len(self.price_tiers) // 2]  # Middle price tier
-        if units_sold is None:
-            units_sold = self.base_demand * 0.8  # Default units sold
-            
-        # Try to predict new parameters if period has been exhausted
-        new_params = predict_restock_parameters(
-            category=self.product_category,
-            demand_forecast=demand_forecast,
-            inventory_level=getattr(self, '_current_inventory', self.initial_inventory),
-            price=price,
-            units_sold=units_sold,
-            current_time=current_time
-        )
+            # Mark parameters as initialized
+            self._initialized_restock_params = True
+            print(f"Initialized restock parameters for {self.product_category}:")
+            print(f"  Amount: {self.restock_amount}, Period: {self.restock_period}")
+            print(f"  (Restock level will be calculated dynamically as demand * period)")
         
-        # If new parameters were predicted, update the config
-        if new_params is not None:
-            self.restock_period = new_params['restock_period']
-            self.restock_level = new_params['restock_level']
-            self.restock_amount = new_params['restock_amount']
-            return new_params
-            
-        # Otherwise, get current parameters
-        return get_current_restock_parameters(self.product_category)
+        # Always return the current saved parameters
+        return {
+            'restock_period': self.restock_period,
+            'restock_amount': self.restock_amount
+        }
 
 
 def create_default_config() -> MSMEConfig:

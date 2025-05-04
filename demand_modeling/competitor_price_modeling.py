@@ -18,7 +18,7 @@ from sklearn.metrics import mean_squared_error, r2_score
 
 def fit_competitor_price_models(
         csv_path: str = 'data/retail_store_inventory.csv',
-        save_path: str = 'competitor_models.pkl',
+        save_path: str = 'models/saved/competitor_models.pkl',
         use_advanced_model: bool = True
 ) -> Dict[str, Dict[str, Any]]:
     """
@@ -161,6 +161,7 @@ def fit_competitor_price_models(
         print("-" * 50)
     
     # Save models
+    os.makedirs(os.path.dirname(save_path), exist_ok=True)
     with open(save_path, 'wb') as f:
         pickle.dump(models, f)
     
@@ -175,7 +176,7 @@ def predict_competitor_price(
         season: str,
         region: str,
         category: str,
-        model_path: str = 'competitor_models.pkl'
+        model_path: str = 'models/saved/competitor_models.pkl'
 ) -> float:
     """
     Predict competitor price based on our price and other factors.
@@ -195,14 +196,30 @@ def predict_competitor_price(
     """
     # Load models
     try:
-        with open(model_path, 'rb') as f:
-            models = pickle.load(f)
+        # First check in models/saved directory
+        model_paths = [
+            'models/saved/competitor_models.pkl',
+            'competitor_models.pkl',
+            os.path.join(os.path.dirname(__file__), '..', 'competitor_models.pkl')
+        ]
+        
+        models = None
+        for path in model_paths:
+            if os.path.exists(path):
+                with open(path, 'rb') as f:
+                    models = pickle.load(f)
+                break
+        
+        if models is None:
+            raise FileNotFoundError(f"Competitor model file not found in expected locations")
     except FileNotFoundError:
-        raise FileNotFoundError(f"Model file not found: {model_path}")
+        raise FileNotFoundError(f"Competitor model file not found: {model_path}")
+    except Exception as e:
+        raise Exception(f"Error loading competitor model: {e}")
     
     # Check if we have a model for this category
     if category not in models:
-        raise ValueError(f"No model found for category '{category}'")
+        raise ValueError(f"No competitor model found for category '{category}'")
     
     # Get model and related data
     model_data = models[category]

@@ -15,6 +15,7 @@ import pickle
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.preprocessing import StandardScaler
 from sklearn.pipeline import Pipeline
+import random
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -29,7 +30,7 @@ class RestockPredictor:
     Makes new predictions only after the previous restock period is exhausted.
     """
     
-    def __init__(self, data_path: str = 'data/retail_store_inventory.csv'):
+    def __init__(self, data_path: str = 'data/improved_retail_store_inventory.csv'):
         """
         Initialize the restock predictor with data.
         
@@ -75,7 +76,7 @@ class RestockPredictor:
     
     def prepare_training_data(self, df: pd.DataFrame) -> Dict[str, Tuple[np.ndarray, np.ndarray]]:
         """
-        Prepare training data for restock parameter prediction models.
+        Prepare training data for restock parameter prediction models using improved dataset.
         
         Args:
             df: Preprocessed retail DataFrame
@@ -104,23 +105,13 @@ class RestockPredictor:
             if len(restock_events) < 2:
                 continue
             
-            # Calculate restock periods
-            restock_events['Next Restock Date'] = restock_events['Date'].shift(-1)
-            restock_events['Days Between Restocks'] = (restock_events['Next Restock Date'] - 
-                                                      restock_events['Date']).dt.days
-            
-            # Calculate inventory levels at time of restock
-            restock_events['Inventory Before Restock'] = (restock_events['Inventory Level'] - 
-                                                         restock_events['Units Ordered'])
-            
-            # For each restock event except the last one (which doesn't have next restock date)
-            for i in range(len(restock_events) - 1):
+            # For each restock event
+            for i in range(len(restock_events)):
                 event = restock_events.iloc[i]
                 
                 # Extract features
                 feature_vector = [
                     # Categoricals would be one-hot encoded in a full implementation
-                    # For simplicity, we're using category as-is
                     1 if category == "Electronics" else 0,
                     1 if category == "Furniture" else 0,
                     1 if category == "Clothing" else 0,
@@ -130,21 +121,33 @@ class RestockPredictor:
                     event['Inventory Level'],
                     event['Price'],
                     event['Units Sold'],
-                    # Day of week, month, etc. would be good features
-                    event['Date'].dayofweek,
-                    event['Date'].month
+                    # Use actual columns from the improved dataset
+                    event['Actual Demand'],
+                    event['Lead Time Days'],
+                    event['Safety Stock'],
+                    # Day of week, month, etc.
+                    pd.to_datetime(event['Date']).dayofweek,
+                    pd.to_datetime(event['Date']).month
                 ]
                 
                 features.append(feature_vector)
-                targets['level'].append(event['Inventory Before Restock'])
-                targets['amount'].append(event['Units Ordered'])
-                targets['period'].append(event['Days Between Restocks'])
+                
+                # Use explicit reorder point for level target
+                targets['level'].append(event['Reorder Point'])
+                
+                # Use EOQ for amount target
+                targets['amount'].append(event['EOQ'])
+                
+                # Use lead time for period target (frequency of checking inventory)
+                targets['period'].append(max(1, event['Lead Time Days'] * 2))  # Check at least twice as often as lead time
         
         # Convert to numpy arrays
         X = np.array(features)
         y_level = np.array(targets['level'])
         y_amount = np.array(targets['amount'])
         y_period = np.array(targets['period'])
+        
+        logger.info(f"Prepared {len(features)} training samples")
         
         return {
             'level': (X, y_level),
@@ -194,21 +197,36 @@ class RestockPredictor:
                     pickle.dump(model, f)
                 logger.info(f"Model for {param_name} saved to {model_path}")
     
-    def load_models(self, model_dir: str = 'models') -> None:
+    def load_models(self, model_dir: str = 'models/saved') -> None:
         """
         Load trained models from disk.
         
         Args:
             model_dir: Directory where models are saved
         """
-        for param_name in ['level', 'amount', 'period']:
-            model_path = os.path.join(model_dir, f'restock_{param_name}_model.pkl')
-            if os.path.exists(model_path):
-                with open(model_path, 'rb') as f:
-                    self.models[param_name] = pickle.load(f)
-                logger.info(f"Loaded model for {param_name} from {model_path}")
-            else:
-                logger.warning(f"Model file {model_path} not found")
+        print(f"Looking for restock prediction models in {os.path.abspath(model_dir)}")
+        
+        # Check both models/saved and models directories
+        model_dirs = [model_dir, 'models']
+        
+        models_loaded = False
+        for dir_path in model_dirs:
+            if not os.path.exists(dir_path):
+                continue
+                
+            for param_name in ['level', 'amount', 'period']:
+                model_path = os.path.join(dir_path, f'restock_{param_name}_model.pkl')
+                if os.path.exists(model_path):
+                    with open(model_path, 'rb') as f:
+                        self.models[param_name] = pickle.load(f)
+                    print(f"Loaded restock {param_name} model from {os.path.abspath(model_path)}")
+                    models_loaded = True
+            
+            if models_loaded:
+                break
+        
+        if not models_loaded:
+            print("No restock prediction models found. Will use default parameters.")
     
     def train_and_save(self) -> None:
         """
@@ -227,7 +245,7 @@ class RestockPredictor:
                               units_sold: float,
                               current_date=None) -> np.ndarray:
         """
-        Prepare feature vector for prediction.
+        Prepare feature vector for prediction using improved feature set.
         
         Args:
             category: Product category
@@ -243,7 +261,16 @@ class RestockPredictor:
         if current_date is None:
             current_date = pd.Timestamp.now()
         
-        # Create feature vector matching the training data structure
+        # Estimate other parameters that would be in the improved dataset
+        actual_demand = demand_forecast * (0.9 + 0.2 * random.random())  # Approx
+        lead_time_days = 2 if category == "Groceries" else 3  # Reasonable defaults
+        if category == "Furniture":
+            lead_time_days = 5
+        
+        # Estimate safety stock based on demand variability
+        safety_stock = demand_forecast * 0.2  # Assuming 20% of forecast as safety stock
+        
+        # Create feature vector matching the improved data structure
         feature_vector = [
             1 if category == "Electronics" else 0,
             1 if category == "Furniture" else 0,
@@ -254,6 +281,9 @@ class RestockPredictor:
             inventory_level,
             price,
             units_sold,
+            actual_demand,
+            lead_time_days,
+            safety_stock,
             current_date.dayofweek,
             current_date.month
         ]
@@ -365,14 +395,16 @@ def get_restock_predictor() -> RestockPredictor:
     global _restock_predictor
     
     if _restock_predictor is None:
+        print("Initializing restock prediction system...")
         _restock_predictor = RestockPredictor()
         
         # Try to load pre-trained models
         try:
             _restock_predictor.load_models()
-            logger.info("Loaded pre-trained restock prediction models")
+            print("Successfully loaded restock prediction models")
         except Exception as e:
-            logger.warning(f"Failed to load pre-trained models: {e}. Will use default parameters.")
+            print(f"Failed to load pre-trained restock models: {e}")
+            print("Will use default restock parameters")
     
     return _restock_predictor
 
@@ -417,6 +449,75 @@ def get_current_restock_parameters(category: str) -> Dict[str, int]:
     """
     predictor = get_restock_predictor()
     return predictor.get_current_parameters(category)
+
+def predict_restock_parameters_once(
+    category: str,
+    demand_forecast: float,
+    inventory_level: float,
+    price: float,
+    units_sold: float,
+    current_date=None
+) -> Dict[str, int]:
+    """
+    Make a one-time prediction of restock parameters using improved models.
+    
+    The restock level is no longer predicted by the model as it will be
+    dynamically calculated as demand_forecast * restock_period in the environment.
+    
+    Args:
+        category: Product category
+        demand_forecast: Current demand forecast
+        inventory_level: Current inventory level
+        price: Current price
+        units_sold: Recent units sold
+        current_date: Current date (defaults to today)
+        
+    Returns:
+        Dictionary with predicted restock parameters
+    """
+    predictor = get_restock_predictor()
+    
+    # Create feature vector with improved features
+    X = predictor.prepare_feature_vector(
+        category, demand_forecast, inventory_level, price, units_sold, current_date
+    )
+    
+    # Make predictions for amount and period using improved models
+    try:
+        # Get the amount prediction from EOQ model
+        amount = max(10, int(predictor.models['amount'].predict(X)[0]))
+        
+        # Get the period prediction
+        period = max(1, int(predictor.models['period'].predict(X)[0]))
+        
+        # Return parameters (without level)
+        params = {
+            'restock_period': period,
+            'restock_amount': amount
+        }
+        
+        print(f"One-time restock parameter prediction for {category}:")
+        print(f"  Amount: {amount}, Period: {period}")
+        print(f"  (Restock level will be calculated dynamically as demand * period)")
+        
+        return params
+    except Exception as e:
+        print(f"Error predicting restock parameters: {e}")
+        print("Using default values")
+        
+        # Fallback to reasonable defaults by category
+        if category == "Groceries":
+            return {'restock_period': 2, 'restock_amount': 150}
+        elif category == "Electronics":
+            return {'restock_period': 6, 'restock_amount': 50}
+        elif category == "Furniture":
+            return {'restock_period': 10, 'restock_amount': 30}
+        elif category == "Clothing":
+            return {'restock_period': 4, 'restock_amount': 80}
+        elif category == "Toys":
+            return {'restock_period': 4, 'restock_amount': 60}
+        else:
+            return {'restock_period': 5, 'restock_amount': 100}
 
 if __name__ == "__main__":
     # Test the module
